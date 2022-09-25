@@ -1,0 +1,170 @@
+---
+title: "STAA 566 Dynamic Plot"
+author: "Tiana Stastny"
+format:
+  html:
+    self-contained: true
+editor: visual
+---
+
+## Obtain data on the 2004 tsunami that impacted Thailand
+
+On December 26, 2004, an undersea earthquake off the coast of northern Indonesia caused a series of tsunami waves that impacted several countries in this region, including Thailand. The National Oceanic and Atmospheric Administration (NOAA) provides data on this tsunami, among others, under the National Centers for Environmental Information (NCEI), specifically the Natural Hazards subdivision. This data is publicly available here:
+
+[NOAA tsunami database](https://www.ngdc.noaa.gov/hazel/view/hazards/tsunami/event-search "NOAA data")
+
+The data plotted below is found by querying the database for the December 26th event in 2004. To replicate this, enter the min and max year as '2004' and click 'Search':
+
+![Search the NOAA tsunami database](images/noaa-search-dynamic-plot.png)
+
+Then, locate the December 26th event, which has 1715 "runup" events. NOAA defines a "runup" as the maximum height of the water measured above a reference sea level.
+
+![2004 search results](images/noaa-search-results.png)
+
+Click on the '1715' runups, and the following data will be available to download via the button in the top left corner of the table:
+
+![Download data specific to Dec. 26, 2004 tsunami](images/download-runup-data.png)
+
+## Load libraries
+
+```{r echo=FALSE}
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(viridis)
+library(htmlwidgets)
+```
+
+## Load data
+
+Load the data from the tsv (tab separated values) file.
+
+```{r}
+# read in data
+tsunami <- read.table(file= 'tsunami_2004_noaa_ncei.tsv', sep = '\t', header = TRUE)
+```
+
+```{r}
+# look at data
+head(tsunami)
+```
+
+```{r}
+# look at datatypes, dimension of data, column names
+class(tsunami)
+dim(tsunami)
+colnames(tsunami)
+```
+
+```{r}
+# take subset of data to use in plot
+# want: "Country", "Location.Name", "Distance.From.Source..km.", "Max.Water.Height..m."
+tsunami_data <- tsunami[, c(4, 6, 9, 18)]
+```
+
+```{r}
+# get data for Thailand only
+thailand <- tsunami_data %>% filter(Country=="THAILAND") 
+
+# review data
+head(thailand)
+```
+
+Note that the original tsv file used in this analysis is included in the GitHub repo.
+
+## Goal of this analysis
+
+The goal of this analysis is to create a plot that shows the measurements of maximum water height (m) at various locations around Thailand. This will illustrate which regions of Thailand were impacted by the 2004 Indian Ocean tsunami, and characterize the range of heights of tsunami waves observed in this region. The plot will convey the maximum 'max_water_height' per each Thailand location, and also convey how far the location was from the source of the tsunami (the undersea earthquake).
+
+## Tidy data
+
+One thing to consider is there are multiple readings for same location. For our purposes, we are interested in the maximum value at each location.
+
+```{r}
+# look at Location.Name
+names <- ggplot(data.frame(thailand), aes(x=Location.Name)) + 
+  geom_bar() +
+  theme(axis.text.x = element_text(angle=90, hjust=1))
+  
+names
+
+```
+
+```{r}
+# look at unique Location.Name values
+unique(thailand[["Location.Name"]])
+```
+
+There is one Location.Name value of "All of Thailand". Since this is vague, drop it from the dataframe.
+
+```{r}
+thailand <- thailand %>% filter(Location.Name != 'ALL OF THAILAND')
+```
+
+Rename the columns to tidier names.
+
+```{r}
+thailand <- thailand %>% rename(
+  Location = Location.Name,
+  Distance_From_Source = Distance.From.Source..km.,
+  Max_Water_Height = Max.Water.Height..m.
+)
+head(thailand)
+```
+
+We want just one measurement of maximum water height (meters) per location. For our plot, we will look at the maximum measurement at each location.
+
+```{r}
+thailand <- thailand %>% group_by(Location) %>% slice(which.max(Max_Water_Height))
+dim(thailand)
+```
+
+We should also check for NA values.
+
+```{r}
+colSums(is.na(thailand))
+```
+
+There are no NA values in this subset of data.
+
+Sort data according to maximum water height to increase readability of the plot.
+
+```{r}
+thailand$Location <- factor(thailand$Location, 
+                                    levels = thailand$Location[order(thailand$Max_Water_Height)])
+```
+
+## Build dynamic plot using plotly
+
+Using the plotly library will allow the plot of maximum water height per Thailand location to be interactive. First, the viewer will be able to hover over each bar and read the specific location, water height, and distance from source. There are 63 bars, so hovering over for specific details will improve readability. The colors of the bars will denote distance from the source, which will provide the viewer with additional information (rather than maximum water height only). Environmental scientists may utilize a similar plot to explore whether there is an association between distance from the undersea earthquake and maximum height of tsunami waves observed. Finally, the highlight feature will allow a user to hover over a specific bar and focus on this specific bar only to view its measurements directly.
+
+```{r}
+# create highlight to specifically look at a measurement for a certain distance value
+thailand_highlight <- highlight_key(thailand, ~Distance_From_Source)
+
+# build ggplot object
+thailand_plot <- ggplot(data = thailand_highlight,
+                        mapping = aes(x = Location,
+                                      y = Max_Water_Height,
+                                      fill = Distance_From_Source)
+                        ) +
+  geom_bar(stat="identity", width=0.5) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 6)) +
+  xlab("Location") +
+  ylab("Maximum height of water (m)") +
+  labs(fill = "Distance from source (km)") +
+  scale_fill_viridis() +
+  ggtitle("Maximum water height per Thailand location during 2004 Indian Ocean tsunami")
+
+# convert to plotly object with specific highlight attributes
+thailand_plotly <- ggplotly(thailand_plot) %>% 
+  highlight(on = "plotly_hover", off = "plotly_relayout", color = "black") 
+
+# show plot
+thailand_plotly
+
+# save plot
+saveWidget(as_widget(thailand_plotly), "thailand_water_height_2004.html")
+save(thailand_plotly, file="thailand_water_height_2004.rda")
+```
