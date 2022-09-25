@@ -11,4 +11,4 @@ The goal of this plot is to create a plot that shows the measurements of maximum
 
 ## Final plot
 
-![Alt text]
+![Alt text](thailand_water_height_2004.png)
